@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  * Copyright (c) 2015 by Contributors
  * \file iter_mnist.cc
@@ -61,11 +80,11 @@ struct MNISTParam : public dmlc::Parameter<MNISTParam> {
 class MNISTIter: public IIterator<TBlobBatch> {
  public:
   MNISTIter(void) : loc_(0), inst_offset_(0) {
-    img_.dptr_ = NULL;
+    img_.dptr_ = nullptr;
     out_.data.resize(2);
   }
   virtual ~MNISTIter(void) {
-    if (img_.dptr_ != NULL) delete []img_.dptr_;
+    if (img_.dptr_ != nullptr) delete []img_.dptr_;
   }
   // intialize iterator loads data in
   virtual void Init(const std::vector<std::pair<std::string, std::string> >& kwargs) {
@@ -85,7 +104,7 @@ class MNISTIter: public IIterator<TBlobBatch> {
     out_.batch_size = param_.batch_size;
     if (param_.shuffle) this->Shuffle();
     if (param_.silent == 0) {
-      mshadow::TShape s;
+      mxnet::TShape s;
       s = batch_data_.shape_;
       if (param_.flat) {
         LOG(INFO) << "MNISTIter: load " << (unsigned)img_.size(0) << " images, shuffle="
@@ -105,11 +124,11 @@ class MNISTIter: public IIterator<TBlobBatch> {
       batch_label_.dptr_ = &labels_[loc_];
       out_.data.clear();
       if (param_.flat) {
-          out_.data.push_back(TBlob(batch_data_.FlatTo2D()));
+          out_.data.emplace_back(batch_data_.FlatTo2D());
       } else {
-          out_.data.push_back(TBlob(batch_data_));
+          out_.data.emplace_back(batch_data_);
       }
-      out_.data.push_back(TBlob(batch_label_));
+      out_.data.emplace_back(batch_label_);
       loc_ += param_.batch_size;
       return true;
     } else {
@@ -239,7 +258,11 @@ class MNISTIter: public IIterator<TBlobBatch> {
 DMLC_REGISTER_PARAMETER(MNISTParam);
 
 MXNET_REGISTER_IO_ITER(MNISTIter)
-.describe("Create iterator for MNIST hand-written digit number recognition dataset.")
+.describe(R"code(Iterating on the MNIST dataset.
+
+One can download the dataset from http://yann.lecun.com/exdb/mnist/
+
+)code" ADD_FILELINE)
 .add_arguments(MNISTParam::__FIELDS__())
 .add_arguments(PrefetcherParam::__FIELDS__())
 .set_body([]() {

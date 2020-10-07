@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  * Copyright (c) 2015 by Contributors
  * \file channel_op_common.h
@@ -14,95 +33,72 @@
 namespace mxnet {
 namespace op {
 
-template<typename xpu, int dim>
-inline void Concatenate(const std::vector<mshadow::Tensor<xpu, dim> > &input,
-                        mshadow::Tensor<xpu, dim> *output, const int dimension) {
+template<typename xpu, int dim, int cdim, typename DType>
+inline void concatenate_helper(const std::vector<mshadow::Tensor<xpu, dim, DType> > &input,
+                               mshadow::Tensor<xpu, dim, DType> *output, const int dimension,
+                               const OpReqType req) {
   using mshadow::expr::concat;
   using mshadow::expr::slice;
-  mshadow::Tensor<xpu, dim> out = *output;
-  size_t size = input.size();
 
-  index_t begin = 0;
-  switch (dimension) {
-    case 0: {
-        for (index_t i = 0; i < size; ++i) {
-          index_t end = begin + input[i].size(0);
-          slice<0>(out, begin, end) = input[i];
-          begin = end;
-        }
-        break;
+  if (dimension == cdim) {
+    mshadow::Tensor<xpu, dim, DType> out = *output;
+    size_t size = input.size();
+    index_t begin = 0;
+    for (size_t i = 0; i < size; ++i) {
+      index_t end = begin + input[i].size(cdim);
+      Assign(slice<cdim>(out, begin, end), req, input[i]);
+      begin = end;
     }
-    case 1: {
-        for (index_t i = 0; i < size; ++i) {
-          index_t end = begin + input[i].size(1);
-          slice<1>(out, begin, end) = input[i];
-          begin = end;
-        }
-        break;
-    }
-    case 2: {
-        for (index_t i = 0; i < size; ++i) {
-          index_t end = begin + input[i].size(2);
-          slice<2>(out, begin, end) = input[i];
-          begin = end;
-        }
-        break;
-    }
-    case 3: {
-        for (index_t i = 0; i < size; ++i) {
-          index_t end = begin + input[i].size(3);
-          slice<3>(out, begin, end) = input[i];
-          begin = end;
-        }
-        break;
-    }
+  } else {
+    concatenate_helper<xpu, dim, (cdim > 0 ? cdim - 1 : 0)>(input, output, dimension, req);
+  }
+}
+
+template<typename xpu, int dim, typename DType>
+inline void Concatenate(const std::vector<mshadow::Tensor<xpu, dim, DType> > &input,
+                        mshadow::Tensor<xpu, dim, DType> *output, const int dimension,
+                        const OpReqType req) {
+  if (dimension < 0) {
+    LOG(FATAL) << "dimension (" << dimension << ") must be greater than 0";
+  } else if (dimension >= dim) {
+    LOG(FATAL) << "dimension (" << dimension << ") must be smaller than dim (" << dim << ")";
+  } else {
+    concatenate_helper<xpu, dim, dim-1>(input, output, dimension, req);
   }
 }
 
 
-
-template<typename xpu, int dim>
-void Split(const mshadow::Tensor<xpu, dim> &input,
-           std::vector<mshadow::Tensor<xpu, dim> > *output,
-           const int dimension) {
+template<typename xpu, int dim, int cdim, typename DType>
+void split_helper(const mshadow::Tensor<xpu, dim, DType> &input,
+           std::vector<mshadow::Tensor<xpu, dim, DType> > *output,
+           const int dimension, const std::vector<OpReqType> &req) {
   using mshadow::expr::concat;
   using mshadow::expr::slice;
-  std::vector<mshadow::Tensor<xpu, dim> > out = *output;
-  size_t size = out.size();
-  index_t begin = 0;
-  switch (dimension) {
-    case 0: {
-      for (index_t i = 0; i < size; ++i) {
-        index_t end = begin + out[i].size(0);
-        out[i] = slice<0>(input, begin, end);
-        begin = end;
-      }
-      break;
+
+  if (dimension == cdim) {
+    std::vector<mshadow::Tensor<xpu, dim, DType> > out = *output;
+    size_t size = out.size();
+    index_t begin = 0;
+    for (size_t i = 0; i < size; ++i) {
+      index_t end = begin + out[i].size(cdim);
+      Assign(out[i], req[i], slice<cdim>(input, begin, end));
+      begin = end;
     }
-    case 1: {
-      for (index_t i = 0; i < size; ++i) {
-        index_t end = begin + out[i].size(1);
-        out[i] = slice<1>(input, begin, end);
-        begin = end;
-      }
-      break;
-    }
-    case 2: {
-      for (index_t i = 0; i < size; ++i) {
-        index_t end = begin + out[i].size(2);
-        out[i] = slice<2>(input, begin, end);
-        begin = end;
-      }
-      break;
-    }
-    case 3: {
-      for (index_t i = 0; i < size; ++i) {
-        index_t end = begin + out[i].size(3);
-        out[i] = slice<3>(input, begin, end);
-        begin = end;
-      }
-      break;
-    }
+  } else {
+    split_helper<xpu, dim, (cdim > 0 ? cdim - 1 : 0)>(input, output, dimension, req);
+  }
+}
+
+template<typename xpu, int dim, typename DType>
+void Split(const mshadow::Tensor<xpu, dim, DType> &input,
+           std::vector<mshadow::Tensor<xpu, dim, DType> > *output,
+           const int dimension, const std::vector<OpReqType> &req) {
+  if (dimension < 0) {
+    LOG(FATAL) << "dimension (" << dimension << ") must be greater than 0";
+  } else if (dimension >= dim) {
+    LOG(FATAL) << "dimension (" << dimension << ") must be smaller than dim (" << dim << ")";
+  } else {
+    split_helper<xpu, dim, dim-1>(input, output, dimension, req);
   }
 }
 }  // namespace op

@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  * Copyright (c) 2015 by Contributors
  * \file engine_impl.h
@@ -13,20 +32,6 @@
 
 namespace mxnet {
 namespace engine {
-
-/*! \brief base class of engine variables, used for type checking */
-struct Var {
-#if ENGINE_DEBUG
-  virtual ~Var() = default;
-#endif  // ENGINE_DEBUG
-  /*!
-   * \brief cast variable to derived type T
-   * \tparam T the type we want to cast into.
-   * \return A casted variable.
-   */
-  template <typename T>
-  inline T* Cast();
-};  // struct Var
 
 /*! \brief base class of engine operators, used for type checking */
 struct Opr {

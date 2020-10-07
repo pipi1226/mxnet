@@ -1,78 +1,66 @@
-import find_mxnet
-import mxnet as mx
-import logging
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import os
 import argparse
-import train_model
+import logging
+logging.basicConfig(level=logging.DEBUG)
+from common import find_mxnet, data, fit
+from common.util import download_file
+import mxnet as mx
 
-# don't use -n and -s, which are resevered for the distributed training
-parser = argparse.ArgumentParser(description='train an image classifer on imagenet')
-parser.add_argument('--network', type=str, default='inception-bn',
-                    choices = ['alexnet', 'vgg', 'googlenet', 'inception-bn', 'inception-bn-full.py'],
-                    help = 'the cnn to use')
-parser.add_argument('--data-dir', type=str, required=True,
-                    help='the input data directory')
-parser.add_argument('--model-prefix', type=str,
-                    help='the prefix of the model to load/save')
-parser.add_argument('--lr', type=float, default=.01,
-                    help='the initial learning rate')
-parser.add_argument('--lr-factor', type=float, default=1,
-                    help='times the lr with a factor for every lr-factor-epoch epoch')
-parser.add_argument('--lr-factor-epoch', type=float, default=1,
-                    help='the number of epoch to factor the lr, could be .5')
-parser.add_argument('--clip-gradient', type=float, default=5.,
-                    help='clip min/max gradient to prevent extreme value')
-parser.add_argument('--num-epochs', type=int, default=20,
-                    help='the number of training epochs')
-parser.add_argument('--load-epoch', type=int,
-                    help="load the model on an epoch using the model-prefix")
-parser.add_argument('--batch-size', type=int, default=32,
-                    help='the batch size')
-parser.add_argument('--gpus', type=str, default='0',
-                    help='the gpus will be used, e.g "0,1,2,3"')
-parser.add_argument('--kv-store', type=str, default='local',
-                    help='the kvstore type')
-parser.add_argument('--num-examples', type=int, default=1281167,
-                    help='the number of training examples')
-parser.add_argument('--num-classes', type=int, default=1000,
-                    help='the number of classes')
-parser.add_argument('--log-file', type=str, 
-		    help='the name of log file')
-parser.add_argument('--log-dir', type=str, default="/tmp/",
-                    help='directory of the log file')
-args = parser.parse_args()
+def set_imagenet_aug(aug):
+    # standard data augmentation setting for imagenet training
+    aug.set_defaults(rgb_mean='123.68,116.779,103.939', rgb_std='58.393,57.12,57.375')
+    aug.set_defaults(random_crop=0, random_resized_crop=1, random_mirror=1)
+    aug.set_defaults(min_random_area=0.08)
+    aug.set_defaults(max_random_aspect_ratio=4./3., min_random_aspect_ratio=3./4.)
+    aug.set_defaults(brightness=0.4, contrast=0.4, saturation=0.4, pca_noise=0.1)
 
-# network
-import importlib
-net = importlib.import_module('symbol_' + args.network).get_symbol(args.num_classes)
+if __name__ == '__main__':
+    # parse args
+    parser = argparse.ArgumentParser(description="train imagenet-1k",
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    fit.add_fit_args(parser)
+    data.add_data_args(parser)
+    data.add_data_aug_args(parser)
+    # uncomment to set standard augmentations for imagenet training
+    # set_imagenet_aug(parser)
+    parser.set_defaults(
+        # network
+        network          = 'resnet',
+        num_layers       = 50,
+        # data
+        num_classes      = 1000,
+        num_examples     = 1281167,
+        image_shape      = '3,224,224',
+        min_random_scale = 1, # if input image has min size k, suggest to use
+                              # 256.0/x, e.g. 0.533 for 480
+        # train
+        num_epochs       = 80,
+        lr_step_epochs   = '30,60',
+        dtype            = 'float32'
+    )
+    args = parser.parse_args()
 
-# data
-def get_iterator(args, kv):
-    data_shape = (3, 224, 224)
-    train = mx.io.ImageRecordIter(
-        path_imgrec = args.data_dir + "train.rec",
-        mean_r      = 123.68,
-        mean_g      = 116.779,
-        mean_b      = 103.939,
-        data_shape  = data_shape,
-        batch_size  = args.batch_size,
-        rand_crop   = True,
-        rand_mirror = True,
-        num_parts   = kv.num_workers,
-        part_index  = kv.rank)
+    # load network
+    from importlib import import_module
+    net = import_module('symbols.'+args.network)
+    sym = net.get_symbol(**vars(args))
 
-    val = mx.io.ImageRecordIter(
-        path_imgrec = args.data_dir + "val.rec",
-        mean_r      = 123.68,
-        mean_g      = 116.779,
-        mean_b      = 103.939,
-        rand_crop   = False,
-        rand_mirror = False,
-        data_shape  = data_shape,
-        batch_size  = args.batch_size,
-        num_parts   = kv.num_workers,
-        part_index  = kv.rank)
-
-    return (train, val)
-
-# train
-train_model.fit(args, net, get_iterator)
+    # train
+    fit.fit(args, sym, data.get_rec_iter)

@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file symbol.h
@@ -8,6 +27,7 @@
 
 #include <Rcpp.h>
 #include <mxnet/c_api.h>
+#include <nnvm/c_api.h>
 #include <string>
 #include <algorithm>
 #include <vector>
@@ -44,6 +64,14 @@ class Symbol {
   /*! \return the outputs in the symbol */
   std::vector<std::string> ListOuputs() const;
 
+  /*! \return the attributes of the symbol */
+  Rcpp::List getAttrs() const;
+  /*!
+   * \brief sets the attributes of the symbol
+   * \param attr list of keyword arguments
+   */
+  void setAttrs(Rcpp::List attr);
+
   /*!
    * \brief Save the symbol to file
    * \param fname the file name we need to save to
@@ -60,6 +88,12 @@ class Symbol {
    * \return The internal of the symbol.
    */
   RObjectType GetInternals() const;
+  /*!
+   * \brief Gets a new grouped symbol whose output contains
+   *     inputs to output nodes of the original symbol.
+   * \return The children of the symbol.
+   */
+  RObjectType GetChildren() const;
   /*!
    * \brief Get index-th outputs of the symbol.
    * \param symbol The symbol
@@ -175,9 +209,9 @@ class SymbolFunction : public ::Rcpp::CppFunction {
 
  private:
   // make constructor private
-  explicit SymbolFunction(AtomicSymbolCreator handle);
+  explicit SymbolFunction(OpHandle handle, std::string name);
   /*! \brief internal creator handle. */
-  AtomicSymbolCreator handle_;
+  OpHandle handle_;
   // name of the function
   std::string name_;
   // hint used to generate the names

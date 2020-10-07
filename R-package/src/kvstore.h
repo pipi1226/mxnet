@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file kvstore.h
@@ -76,14 +95,14 @@ class KVStore {
  private:
   explicit KVStore(KVStoreHandle handle)
       : handle_(handle), optimizer_set_(false) {}
-  // the internal callback to kvstore.
-  NDArray CreateState(int index, const NDArray& weight) const;
+  // the internal callback to kvstore. This might return NULL
+  Rcpp::List CreateState(int index, const NDArray& weight) const;
   /*! \brief internal KVStore handle */
   KVStoreHandle handle_;
   /*! \brief Whether optimizer is setted*/
   bool optimizer_set_;
   /*! \brief The internal state */
-  std::map<int, NDArray> states_;
+  std::map<int, Rcpp::List> states_;
   /*! \brief Function to create state */
   Rcpp::RObject fcreate_state_;
   /*! \brief Function to perform update */

@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file io.cc
@@ -54,14 +73,14 @@ ArrayDataIter::ArrayDataIter(const Rcpp::NumericVector& data,
       RLOG_FATAL << "Data and label shape in-consistent";
     }
   }
-
-  std::vector<size_t> order(label.size());
+  num_data = lshape[lshape.size() - 1];
+  std::vector<size_t> order(num_data);
   for (size_t i = 0; i < order.size(); ++i) {
     order[i] = i;
   }
 
   if (shuffle) {
-    RCHECK(unif_rnds.size() == label.size());
+    RCHECK(unif_rnds.size() == num_data);
     for (size_t i = order.size() - 1; i != 0; --i) {
       size_t idx = static_cast<size_t>(unif_rnds[i] * (i + 1));
       if (idx < i) {
@@ -110,7 +129,7 @@ void ArrayDataIter::Convert(const Rcpp::NumericVector& src,
 }
 
 Rcpp::List ArrayDataIter::Value() const {
-  RCHECK(counter_ != 0 && counter_ <= label_.size())
+  RCHECK(counter_ != 0 && counter_ <= num_data)
       << "Read Iter at end or before iter.next is called";
   return Rcpp::List::create(
       Rcpp::Named("data") = data_[counter_ - 1].RObject(),

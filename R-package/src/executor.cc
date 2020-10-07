@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file executor.h
@@ -24,6 +43,12 @@ void Executor::UpdateAuxArray(const Rcpp::List& array,
                               bool match_name,
                               bool skip_null) {
   UpdateArray("aux.arrays", array, aux_arrays_, match_name, skip_null);
+}
+
+void Executor::UpdateGradArray(const Rcpp::List& array,
+                               bool match_name,
+                               bool skip_null) {
+  UpdateArray("grad.arrays", array, grad_arrays_, match_name, skip_null);
 }
 
 void Executor::UpdateArray(const char* array_name,
@@ -97,7 +122,7 @@ void Executor::Forward(bool is_train,
 
 void Executor::Backward(const Rcpp::List &output_grads) {
   RCHECK(grad_arrays_ != nullptr)
-      << "This executor has not been binded with req.grad";
+      << "This executor has not been bound with req.grad";
   std::vector<NDArrayHandle> grad_handles
       = NDArray::GetHandles(output_grads, "output_grads", false);
   MX_CALL(MXExecutorBackward(handle_,
@@ -141,14 +166,22 @@ inline Rcpp::List* CreateGradList(const Rcpp::List& source_array,
     ret->names() = names;
     handles->resize(grad_reqs.size(), nullptr);
     grad_req_type->resize(grad_reqs.size(), 0);
+    std::map<std::string, int> req_map;
+    req_map["null"] = 0;
+    req_map["write"] = 1;
+    req_map["add"] = 3;
 
     for (size_t i = 0; i < grad_reqs.size(); ++i) {
-      RCHECK(Rcpp::is<bool>(grad_reqs[i]))
-          << "Expect input grad_reqs to be list of booleans";
-      if (Rcpp::as<bool>(grad_reqs[i])) {
+      if (Rcpp::as<std::string>(grad_reqs[i]) != "null"
+          && Rcpp::as<std::string>(grad_reqs[i]) != "write"
+          && Rcpp::as<std::string>(grad_reqs[i]) != "add") {
+        RLOG_FATAL << "grad_req must be one of 'null', 'write' or 'add'";
+      }
+
+      if (Rcpp::as<std::string>(grad_reqs[i]) != "null") {
         ret->at(i) = NDArray::Empty(NDArray::FromRObject(source_array[i]).dim(), ctx);
         handles->at(i) = NDArray::FromRObject(ret->at(i))->handle;
-        grad_req_type->at(i) = 1;
+        grad_req_type->at(i) = req_map[Rcpp::as<std::string>(grad_reqs[i])];
       }
     }
   } catch(const Rcpp::exception& ex) {
@@ -226,6 +259,9 @@ void Executor::InitRcppModule() {
       .method("update.arg.arrays",
               &Executor::UpdateArgArray,
               "Update arguments array of executor, this will mutate the executor")
+      .method("update.grad.arrays",
+              &Executor::UpdateGradArray,
+              "Update gradient array of executor, this will mutate the executor")
       .method("forward",
               &Executor::Forward,
               "Peform a forward operation on exec, this will set the outputs.")

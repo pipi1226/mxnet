@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file operator.h
@@ -11,59 +30,19 @@
 #include <dmlc/json.h>
 #include <dmlc/logging.h>
 #include <dmlc/registry.h>
+#include <nnvm/node.h>
 #include <vector>
 #include <map>
 #include <string>
 #include <utility>
 #include "./base.h"
 #include "./resource.h"
+#include "./op_attr_types.h"
 
 namespace mxnet {
-/*! \brief operation request type to Forward and Backward */
-enum OpReqType {
-  /*! \brief no operation, do not write anything */
-  kNullOp,
-  /*! \brief write gradient to provided space */
-  kWriteTo,
-  /*!
-   * \brief perform an inplace write,
-   * Target shares memory with one of input arguments.
-   * This option only happen when
-   */
-  kWriteInplace,
-  /*! \brief add to the provided space */
-  kAddTo
-};
-
-/*!
- * \brief All the possible information needed by Operator.Forward and Backward
- *  This is the superset of RunContext.
- *  We use this data structure to bookkeep everything needed by Forward and Backward.
- * \sa Resource
- */
-struct OpContext {
-  /*! \brief whether it is training phase */
-  int is_train;
-  /*! \brief RunContext related resources */
-  RunContext run_ctx;
-  /*! \brief the callback when operation completes, used by asynchronize ops */
-  engine::CallbackOnComplete async_on_complete;
-  /*! \brief Resources requested by the operator */
-  std::vector<Resource> requested;
-  /*!
-   * \brief get mshadow stream from Context
-   * \return the mshadow stream
-   * \tparam xpu the device type of the stream
-   */
-  template<typename xpu>
-  inline mshadow::Stream<xpu>* get_stream() const {
-    return run_ctx.get_stream<xpu>();
-  }
-};
-
 /*!
  * \brief Operator interface.
- *  Operator defins basic operation unit of optimized computation graph in mxnet.
+ *  Operator defines basic operation unit of optimized computation graph in mxnet.
  *  This interface relies on pre-allocated memory in TBlob, the caller need to set
  *  the memory region in TBlob correctly before calling Forward and Backward.
  *
@@ -71,27 +50,10 @@ struct OpContext {
  *  To add new operator(aka. layers of neural nets) to mxnet, developer need to create
  *  a new OperatorProperty and its corresponding Operator.
  *
- * \sa TBlob, TShape, OperatorProperty
+ * \sa TBlob, mxnet::TShape, OperatorProperty
  */
 class Operator {
  public:
-  /*! \brief the execution type of the operator */
-  enum ExecType {
-    /*! \brief Forward/Backward are synchronize calls */
-    kSync,
-    /*!
-     * \brief Forward/Backward are asynchronize,
-     *  will call OpContext.async_on_complete when operation finishes.
-     */
-    kAsync,
-    /*!
-     * \brief Cross device copy operation, this is a special operator
-     *  That indicates copy across devices, the input and output can sit on different device.
-     *  In current implementation, copy operator is specially handled by executor.
-     *  This flag is used for special case treatment and future extension of different copy ops.
-     */
-    kCrossDeviceCopy
-  };
   /*! \brief destructor */
   virtual ~Operator() {}
   /*!
@@ -147,9 +109,9 @@ class Operator {
                         const std::vector<TBlob> &aux_states) {
     LOG(FATAL) << "Backward is not implemented";
   }
-  /*! \return execution type of the operator */
-  virtual ExecType exec_type() const {
-    return kSync;
+  /*! \return [Deprecated] execution type of the operator */
+  virtual ExecType exec_type() const final {  // NOLINT(*) exec_type has been moved to OperatorProperty
+    return ExecType::kSync;
   }
 };
 
@@ -194,7 +156,7 @@ class OperatorProperty {
     return {"output"};
   }
   /*!
-   * \brief Get name of auxilary states of Operator
+   * \brief Get name of auxiliary states of Operator
    * \return name of return values.
    */
   virtual std::vector<std::string> ListAuxiliaryStates() const {
@@ -202,7 +164,7 @@ class OperatorProperty {
   }
   /*! \return number of real return values of the Operator */
   virtual int NumOutputs() const {
-    return 1;
+    return this->ListOutputs().size();
   }
   /*!
    * \brief get number of visible return values during Symbol creation.
@@ -227,18 +189,56 @@ class OperatorProperty {
    *     For unknown shapes, InferShape will try to fill in the correct Shape in in_shape
    *     For known shapes, InferShape will check shape consistency
    *
-   *     common practice: set the shape of data input, and usually weight's shape can be infered
+   *     common practice: set the shape of data input, and usually weight's shape can be inferred
    *
    * \param out_shape the shape of outputs of the operator
-   *     InferShape will modify the vector to fill output TShape
+   *     InferShape will modify the vector to fill output mxnet::TShape
    * \param aux_shape the shape of auxiliary states of the operator
-   *     InferShape will modify the vector to fill output TShape
+   *     InferShape will modify the vector to fill output mxnet::TShape
    * \return true if the shape inference is successful, false if there is not enough information.
    * \throws dmlc::Error if the known arg_shapes are inconsistent.
    */
-  virtual bool InferShape(std::vector<TShape> *in_shape,
-                          std::vector<TShape> *out_shape,
-                          std::vector<TShape> *aux_shape) const = 0;
+  virtual bool InferShape(mxnet::ShapeVector *in_shape,
+                          mxnet::ShapeVector *out_shape,
+                          mxnet::ShapeVector *aux_shape) const = 0;
+  /*!
+   * \brief infer the data types of outputs and unknown input arguments
+   * \param in_type the type of input arguments of the operator
+   *     this should be of same length as the vector returned by DescribeArgs
+   *     in_type allows unknown elements, which are checked by type.ndim() == 0.
+   *     For unknown types, Infertype will try to fill in the correct type in in_type
+   *     For known types, Infertype will check type consistency
+   *
+   *     common practice: set the type of data input, and usually weight's type can be inferred
+   *
+   * \param out_type the type of outputs of the operator
+   *     Infertype will modify the vector to fill output Ttype
+   * \param aux_type the type of auxiliary states of the operator
+   *     Infertype will modify the vector to fill output Ttype
+   * \return true if the type inference is successful, false if there is not enough information.
+   * \throws dmlc::Error if the known arg_types are inconsistent.
+   */
+  virtual bool InferType(std::vector<int> *in_type,
+                          std::vector<int> *out_type,
+                          std::vector<int> *aux_type) const {
+    CHECK_LE(in_type->size(), this->ListArguments().size());
+    int n_in = this->ListArguments().size();
+    for (unsigned i = 0; i < in_type->size(); ++i) {
+      CHECK(in_type->at(i) == mshadow::default_type_flag ||
+            in_type->at(i) == -1) << "Unsupported data type " << in_type->at(i);
+    }
+    in_type->clear();
+    for (int i = 0; i < n_in; ++i ) in_type->push_back(mshadow::default_type_flag);
+
+    int n_out = this->ListOutputs().size();
+    out_type->clear();
+    for (int i = 0; i < n_out; ++i ) out_type->push_back(mshadow::default_type_flag);
+
+    int n_aux = this->ListAuxiliaryStates().size();
+    aux_type->clear();
+    for (int i = 0; i < n_aux; ++i ) aux_type->push_back(mshadow::default_type_flag);
+    return true;
+  }
   /*!
    * \brief Copy this OperatorProperty.
    * \return a pointer to the copied OperatorProperty
@@ -248,6 +248,25 @@ class OperatorProperty {
    * \brief Create a Operator on specific context
    */
   virtual Operator* CreateOperator(Context ctx) const = 0;
+  /*!
+   * \brief Create a Operator on specific context and input shape/type
+   * \param ctx context of this operator
+   * \param in_shape shape of the input ndarrays
+   * \param in_type dtype of the input ndarrays
+   * \return the created operator
+   */
+  virtual Operator* CreateOperatorEx(Context ctx, mxnet::ShapeVector *in_shape,
+                                     std::vector<int> *in_type) const {
+    std::vector<int> out_type, aux_type;
+    mxnet::ShapeVector out_shape, aux_shape;
+    out_type.resize(this->ListOutputs().size());
+    out_shape.resize(this->ListOutputs().size());
+    aux_type.resize(this->ListAuxiliaryStates().size());
+    aux_shape.resize(this->ListAuxiliaryStates().size());
+    CHECK(InferType(in_type, &out_type, &aux_type));
+    CHECK(InferShape(in_shape, &out_shape, &aux_shape));
+    return CreateOperator(ctx);
+  }
   /*!
    * \brief return the type string of the Operator
    *  subclasses override this function.
@@ -265,18 +284,18 @@ class OperatorProperty {
    * \return Additional resource request
    */
   virtual std::vector<ResourceRequest> ForwardResource(
-      const std::vector<TShape> &in_shape) const {
+      const mxnet::ShapeVector &in_shape) const {
     return std::vector<ResourceRequest>();
   }
   /*!
-   * \brief Decalre additional resource required in backward pass.
+   * \brief Declare additional resource required in backward pass.
    *  These additional resources will be presented in OpContext.requested
    *  in the same order of the returned Resource.
    * \param in_shape The input shape to the operator, corresponds to shapes of in_data.
    * \return Additional resource request
    */
   virtual std::vector<ResourceRequest> BackwardResource(
-      const std::vector<TShape> &in_shape) const {
+      const mxnet::ShapeVector &in_shape) const {
     return std::vector<ResourceRequest>();
   }
   /*!
@@ -284,7 +303,7 @@ class OperatorProperty {
    *
    *  Only the returned list of variables will be used in Backward.
    *  This function is used for memory optimization.
-   *  It is adviced to override and only return what is actually needed.
+   *  It is advised to override and only return what is actually needed.
    *  If this function is not overriden, all the variables will be valid in Backward.
    *
    * \code
@@ -420,6 +439,10 @@ class OperatorProperty {
    * \return a new constructed OperatorProperty
    */
   static OperatorProperty *Create(const char* type_name);
+  /*! \return execution type of the operator */
+  virtual ExecType exec_type() const {
+    return ExecType::kSync;
+  }
 };
 
 /*! \brief typedef the factory function of operator property */
@@ -463,9 +486,10 @@ struct OperatorPropertyReg
   std::string key_var_num_args;
 };
 
-//--------------------------------------------------------------
+//---------------------------------------------------------------------------------
 // The following part are API Registration of Operators
-//--------------------------------------------------------------
+// See also MXNET_REGISTER_SIMPLE_OP in operator_util.h for registering simple ops.
+//---------------------------------------------------------------------------------
 /*!
  * \brief Macro to register OperatorProperty
  *
@@ -479,6 +503,7 @@ struct OperatorPropertyReg
 #define MXNET_REGISTER_OP_PROPERTY(name, OperatorPropertyType)          \
   DMLC_REGISTRY_REGISTER(::mxnet::OperatorPropertyReg, OperatorPropertyReg, name) \
   .set_body([]() { return new OperatorPropertyType(); })                \
+  .set_return_type("NDArray-or-Symbol") \
   .check_name()
 
 #endif  // DMLC_USE_CXX11

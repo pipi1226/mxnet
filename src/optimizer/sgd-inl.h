@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file sgd-inl.h
@@ -28,9 +47,6 @@ struct SGDParam : public dmlc::Parameter<SGDParam> {
     .set_range(0.0f, 1.0f)
     .set_default(0.0f)
     .describe("momentum");
-    DMLC_DECLARE_FIELD(wd)
-    .set_default(0.0001f)
-    .describe("weight decay");
     DMLC_DECLARE_FIELD(rescale_grad)
     .set_default(1.0f)
     .describe("rescale gradient as grad = rescale_grad*grad.");
@@ -57,25 +73,25 @@ struct sgd_clip {
 
 template<typename xpu>
 void sgd_mom_update(RunContext ctx, TBlob weight, const TBlob grad, TBlob mom,
-                float lr, const SGDParam& param) {
+                float lr, float wd, const SGDParam& param) {
   using namespace mshadow;
   using namespace mshadow::expr;
   Stream<xpu>* s = ctx.get_stream<xpu>();
   Tensor<xpu, 2> weight2d = weight.FlatTo2D<xpu, real_t>(s);
   Tensor<xpu, 2> mom2d = mom.FlatTo2D<xpu, real_t>(s);
   Tensor<xpu, 2> grad2d = grad.FlatTo2D<xpu, real_t>(s);
-  if (param.clip_gradient >= 0.0f) {
+  if (param.clip_gradient > 0.0f) {
     mom2d = param.momentum*mom2d -
-            lr*(param.rescale_grad*F<sgd_clip>(grad2d, param.clip_gradient) + param.wd*weight2d);
+            lr*(param.rescale_grad*F<sgd_clip>(grad2d, param.clip_gradient) + wd*weight2d);
   } else {
-    mom2d = param.momentum*mom2d - lr*(param.rescale_grad*grad2d + param.wd*weight2d);
+    mom2d = param.momentum*mom2d - lr*(param.rescale_grad*grad2d + wd*weight2d);
   }
   weight2d += mom2d;
 }
 
 template<typename xpu>
 void sgd_update(RunContext ctx, TBlob weight, const TBlob grad,
-                float lr, const SGDParam& param) {
+                float lr, float wd, const SGDParam& param) {
   using namespace mshadow;
   using namespace mshadow::expr;
   Stream<xpu>* s = ctx.get_stream<xpu>();
@@ -83,21 +99,21 @@ void sgd_update(RunContext ctx, TBlob weight, const TBlob grad,
   Tensor<xpu, 2> grad2d = grad.FlatTo2D<xpu, real_t>(s);
   if (param.clip_gradient >= 0.0f) {
     weight2d -= lr*(param.rescale_grad*F<sgd_clip>(grad2d, param.clip_gradient) +
-                param.wd*weight2d);
+                wd*weight2d);
   } else {
-    weight2d -= lr*(param.rescale_grad*grad2d + param.wd*weight2d);
+    weight2d -= lr*(param.rescale_grad*grad2d + wd*weight2d);
   }
 }
 
 void call_sgd_mom_update_cpu(RunContext ctx, TBlob weight, const TBlob grad, TBlob mom,
-                float lr, const SGDParam& param);
+                float lr, float wd, const SGDParam& param);
 void call_sgd_update_cpu(RunContext ctx, TBlob weight, const TBlob grad,
-                float lr, const SGDParam& param);
+                float lr, float wd, const SGDParam& param);
 #if MXNET_USE_CUDA
 void call_sgd_mom_update_gpu(RunContext ctx, TBlob weight, const TBlob grad, TBlob mom,
-                float lr, const SGDParam& param);
+                float lr, float wd, const SGDParam& param);
 void call_sgd_update_gpu(RunContext ctx, TBlob weight, const TBlob grad,
-                float lr, const SGDParam& param);
+                float lr, float wd, const SGDParam& param);
 #endif  // MXNET_USE_CUDA
 
 #if DMLC_USE_CXX11
@@ -116,32 +132,36 @@ class SGDOpt : public Optimizer {
   }
 
   void Update(const int index, NDArray *weight,
-              const NDArray *grad, const float lr) override {
+              const NDArray *grad, const float lr, const float wd) override {
     NDArray w = *weight, g = *grad;
     CreateState(index, weight);
     switch (w.ctx().dev_type) {
      case Context::kCPU:
      case Context::kCPUPinned:
       if (param_.momentum > 0.0f) {
-        Engine::Get()->PushSync([this, index, w, g, lr](RunContext ctx) {
-          call_sgd_mom_update_cpu(ctx, w.data(), g.data(), mom[index].data(), lr, param_);
-        }, w.ctx(), {g.var()}, {w.var(), mom[index].var()}, FnProperty::kNormal);
+        Engine::Get()->PushSync([this, index, w, g, lr, wd](RunContext ctx) {
+          call_sgd_mom_update_cpu(ctx, w.data(), g.data(), mom[index].data(), lr, wd, param_);
+        }, w.ctx(), {g.var()}, {w.var(), mom[index].var()},
+        FnProperty::kNormal, 0, "SGDOptUpdate");
       } else {
-        Engine::Get()->PushSync([this, index, w, g, lr](RunContext ctx) {
-          call_sgd_update_cpu(ctx, w.data(), g.data(), lr, param_);
-        }, w.ctx(), {g.var()}, {w.var()}, FnProperty::kNormal);
+        Engine::Get()->PushSync([this, index, w, g, lr, wd](RunContext ctx) {
+          call_sgd_update_cpu(ctx, w.data(), g.data(), lr, wd, param_);
+        }, w.ctx(), {g.var()}, {w.var()},
+        FnProperty::kNormal, 0, "SGDOptUpdate");
       }
       break;
      case Context::kGPU:
 #if MXNET_USE_CUDA
       if (param_.momentum > 0.0f) {
-        Engine::Get()->PushSync([this, index, w, g, lr](RunContext ctx) {
-          call_sgd_mom_update_gpu(ctx, w.data(), g.data(), mom[index].data(), lr, param_);
-        }, w.ctx(), {g.var()}, {w.var(), mom[index].var()}, FnProperty::kNormal);
+        Engine::Get()->PushSync([this, index, w, g, lr, wd](RunContext ctx) {
+          call_sgd_mom_update_gpu(ctx, w.data(), g.data(), mom[index].data(), lr, wd, param_);
+        }, w.ctx(), {g.var()}, {w.var(), mom[index].var()},
+        FnProperty::kNormal, 0, "SGDOptUpdate");
       } else {
-        Engine::Get()->PushSync([this, index, w, g, lr](RunContext ctx) {
-          call_sgd_update_gpu(ctx, w.data(), g.data(), lr, param_);
-        }, w.ctx(), {g.var()}, {w.var()}, FnProperty::kNormal);
+        Engine::Get()->PushSync([this, index, w, g, lr, wd](RunContext ctx) {
+          call_sgd_update_gpu(ctx, w.data(), g.data(), lr, wd, param_);
+        }, w.ctx(), {g.var()}, {w.var()},
+        FnProperty::kNormal, 0, "SGDOptUpdate");
       }
       break;
 #else

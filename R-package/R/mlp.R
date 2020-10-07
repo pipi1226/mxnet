@@ -1,14 +1,31 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 #' Convenience interface for multiple layer perceptron
 #' 
-#' @param data the input matrix.
-#' @param label the training label.
+#' @param data the input matrix. Only mx.io.DataIter and R array/matrix types supported.
+#' @param label the training label. Only R array type supported.
 #' @param hidden_node a vector containing number of hidden nodes on each hidden layer as well as the output layer.
 #' @param out_node the number of nodes on the output layer.
 #' @param dropout a number in [0,1) containing the dropout ratio from the last hidden layer to the output layer.
 #' @param activation either a single string or a vector containing the names of the activation functions.
 #' @param out_activation a single string containing the name of the output activation function.
-#' @param device whether train on cpu (default) or gpu.
-#' @param eval_metric the evaluation metric/
+#' @param ctx whether train on cpu (default) or gpu.
+#' @param eval.metric the evaluation metric/
 #' @param ... other parameters passing to \code{mx.model.FeedForward.create}/
 #' 
 #' @examples
@@ -28,7 +45,7 @@
 #' @export
 mx.mlp <- function(data, label, hidden_node = 1, out_node, dropout = NULL, 
                    activation = "tanh", out_activation = "softmax",
-                   device=mx.ctx.default(), ...) {
+                   ctx = mx.ctx.default(), ...) {
   
   m <- length(hidden_node)
   if (!is.null(dropout)) {
@@ -47,7 +64,7 @@ mx.mlp <- function(data, label, hidden_node = 1, out_node, dropout = NULL,
       stop(paste("Length of activation should be",m))
     }
   }
-  for (i in 1:m) {
+  for (i in seq_len(m)) {
     fc <- mx.symbol.FullyConnected(act, num_hidden=hidden_node[i])
     act <- mx.symbol.Activation(fc, act_type=activation[i])
     if (i == m && !is.null(dropout)) {
@@ -55,15 +72,11 @@ mx.mlp <- function(data, label, hidden_node = 1, out_node, dropout = NULL,
     }
   }
   fc <- mx.symbol.FullyConnected(act, num_hidden=out_node)
-  if (out_activation == "rmse") {
-    out <- mx.symbol.LinearRegressionOutput(fc)
-  } else if (out_activation == "softmax") {
-    out <- mx.symbol.SoftmaxOutput(fc)
-  } else if (out_activation == "logistic") {
-    out <- mx.symbol.LogisticRegressionOutput(fc)
-  } else {
-    stop("Not supported yet.")
-  }
-  model <- mx.model.FeedForward.create(out, X=data, y=label, ctx=device, ...)
+  out <- switch(out_activation,
+                "rmse" = mx.symbol.LinearRegressionOutput(fc),
+                "softmax" = mx.symbol.SoftmaxOutput(fc),
+                "logistic" = mx.symbol.LogisticRegressionOutput(fc),
+                stop("Not supported yet."))
+  model <- mx.model.FeedForward.create(out, X=data, y=label, ctx = ctx, ...)
   return(model)
 }

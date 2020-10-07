@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file symbol.cc
@@ -64,7 +83,7 @@ void Symbol::Compose(const Rcpp::List& kwargs, const std::string &name) {
   for (size_t i = 0; i < kwargs.size(); ++i) {
     handles[i] = Symbol::XPtr(kwargs[i])->handle_;
   }
-  MX_CALL(MXSymbolCompose(
+  MX_CALL(NNSymbolCompose(
       handle_, name.c_str(),
       static_cast<mx_uint>(handles.size()),
       dmlc::BeginPtr(c_keys), dmlc::BeginPtr(handles)));
@@ -91,6 +110,33 @@ std::vector<std::string> Symbol::ListOuputs() const {
   return std::vector<std::string>(ret, ret + size);
 }
 
+Rcpp::List Symbol::getAttrs() const {
+  mx_uint size;
+  const char **ret;
+  MX_CALL(MXSymbolListAttrShallow(handle_, &size, &ret));
+  std::vector<std::string> key_values(ret, ret + 2*size);
+
+  // fill return list
+  Rcpp::List list;
+  for (size_t i = 0; i < size; i++) {
+    list[key_values[2*i]] = key_values[2*i+1];
+  }
+  return list;
+}
+
+void Symbol::setAttrs(Rcpp::List attr) {
+  RCHECK(HasName(attr))
+        << "Need to pass parameters in list of key=value style.\n";
+  std::vector<std::string> keys = attr.names();
+  for (size_t i = 0; i < attr.size(); i++) {
+    RCHECK(TYPEOF(attr[i]) == STRSXP) << "Attribute values must be characters.\n";
+  }
+  for (size_t i = 0; i < attr.size(); i++) {
+    MX_CALL(MXSymbolSetAttr(handle_, keys[i].c_str(),
+                            Rcpp::as<std::string>(attr[i]).c_str() ));
+  }
+}
+
 void Symbol::Save(const std::string& fname) const {
   MX_CALL(MXSymbolSaveToFile(handle_, fname.c_str()));
 }
@@ -104,6 +150,12 @@ std::string Symbol::AsJSON() const {
 Symbol::RObjectType Symbol::GetInternals() const {
   SymbolHandle out;
   MX_CALL(MXSymbolGetInternals(handle_, &out));
+  return Symbol::RObject(out);
+}
+
+Symbol::RObjectType Symbol::GetChildren() const {
+  SymbolHandle out;
+  MX_CALL(MXSymbolGetChildren(handle_, &out));
   return Symbol::RObject(out);
 }
 
@@ -213,20 +265,21 @@ Symbol::RObjectType Symbol::Group(const Rcpp::List& symbols) {
   return Symbol::RObject(out);
 }
 
-SymbolFunction::SymbolFunction(AtomicSymbolCreator handle)
+SymbolFunction::SymbolFunction(OpHandle handle, std::string name)
     : handle_(handle) {
-  const char* name;
+  const char* real_name;
   const char* description;
   mx_uint num_args;
   const char **arg_names;
   const char **arg_type_infos;
   const char **arg_descriptions;
   const char *key_var_num_args;
+  const char *ret_type;
 
   MX_CALL(MXSymbolGetAtomicSymbolInfo(
-      handle_, &name, &description, &num_args,
+      handle_, &real_name, &description, &num_args,
       &arg_names, &arg_type_infos, &arg_descriptions,
-      &key_var_num_args));
+      &key_var_num_args, &ret_type));
   if (key_var_num_args != nullptr) {
     key_var_num_args_ = key_var_num_args;
   }
@@ -234,12 +287,12 @@ SymbolFunction::SymbolFunction(AtomicSymbolCreator handle)
   std::transform(name_hint_.begin(), name_hint_.end(),
                  name_hint_.begin(), ::tolower);
   if (name[0] == '_') {
-    name_ = std::string("mx.varg.symbol.internal.") + (name + 1);
+    name_ = std::string("mx.varg.symbol.internal.") + (name.c_str() + 1);
   } else {
     name_ = std::string("mx.varg.symbol.") + name;
   }
   std::ostringstream os;
-  os << description << "\n\n"
+  os << name << ':' << description << "\n\n"
      << MakeDocString(num_args, arg_names, arg_type_infos, arg_descriptions)
      << "@param name  string, optional\n"
      << "    Name of the resulting symbol.\n"
@@ -281,7 +334,7 @@ SEXP SymbolFunction::operator() (SEXP* args) {
   SymbolHandle shandle;
   std::vector<const char*> c_str_keys = CKeys(str_keys);
   std::vector<const char*> c_str_vals = CKeys(str_vals);
-  MX_CALL(MXSymbolCreateAtomicSymbol(
+  MX_CALL(NNSymbolCreateAtomicSymbol(
       handle_, static_cast<mx_uint>(str_keys.size()),
       dmlc::BeginPtr(c_str_keys),
       dmlc::BeginPtr(c_str_vals),
@@ -308,12 +361,16 @@ void Symbol::InitRcppModule() {
               "Save symbol to file")
       .property("arguments", &Symbol::ListArguments,
               "List the arguments names of the symbol")
+      .property("attributes", &Symbol::getAttrs, &Symbol::setAttrs,
+              "Attributes of the symbol. Specified as named list.")
       .property("outputs", &Symbol::ListOuputs,
               "List the outputs names of the symbol")
       .property("auxiliary.states", &Symbol::ListAuxiliaryStates,
               "List the auxiliary state names of the symbol")
       .method("get.internals", &Symbol::GetInternals,
               "Get a symbol that contains all the internals")
+      .method("get.children", &Symbol::GetChildren,
+              "Get a symbol that contains all the children")
       .method("get.output", &Symbol::GetOutput,
               "Get index-th output symbol of current one")
       .method("[[", &Symbol::GetOutput,
@@ -344,10 +401,17 @@ void SymbolFunction::InitRcppModule() {
   RCHECK(scope != nullptr)
       << "Init Module need to be called inside scope";
   mx_uint out_size;
-  AtomicSymbolCreator *arr;
-  MX_CALL(MXSymbolListAtomicSymbolCreators(&out_size, &arr));
+  const char** op_name_ptrs;
+  std::vector<std::string> op_names;
+  MX_CALL(MXListAllOpNames(&out_size, &op_name_ptrs));
+  for (size_t i = 0; i < out_size; ++i) {
+    op_names.push_back(std::string(op_name_ptrs[i]));
+  }
+
   for (int i = 0; i < out_size; ++i) {
-    SymbolFunction *f = new SymbolFunction(arr[i]);
+    OpHandle handle;
+    MX_CALL(NNGetOpHandle(op_names[i].c_str(), &handle));
+    SymbolFunction *f = new SymbolFunction(handle, op_names[i]);
     scope->Add(f->get_name(), f);
   }
 }

@@ -32,6 +32,7 @@
 doc/html
 doc/latex
 doc/doc
+docs/web-data
 
 #dmlc
 config.mk
@@ -50,6 +51,7 @@ tracker
 .vimrc
 .ycm_extra_conf.py
 .ycm_extra_conf.pyc
+.clang-format
 
 # Emacs
 .#*
@@ -58,13 +60,13 @@ tracker
 __pycache__
 *.pkl
 *.params
+*.states
 *.json
 *.d
-build
+cmake-build*
 data
+model
 recommonmark
-bin
-deps
 
 # R
 *.Rcheck
@@ -73,6 +75,9 @@ deps
 .Rproj.user
 R-package/inst/*
 *.tar.gz
+*.tgz
+R-package/man/*.Rd
+R-package/R/mxnet_generated.R
 
 # data
 *.rec
@@ -80,14 +85,80 @@ R-package/inst/*
 *.zip
 *ubyte
 *.bin
+*.txt
+!CMakeLists.txt
 
 # ipython notebook
-example/notebooks/.ipynb_checkpoints/*
 *_pb2.py
+*.ipynb_checkpoints*
+input.txt*
 
 # Jetbrain
 .idea
+.gradle
+*.iml
 
 # ctags
 tags
 
+# cscope
+cscope.out
+cscope.files
+
+# Eclipse project config
+.project
+.cproject
+.classpath
+.settings
+.pydevproject
+CMakeFiles
+cmake_install.cmake
+
+# Visual Studio Code
+.vscode
+
+# Mac OS X
+.DS_Store
+
+#Notebook Automated Test
+!tests/nightly/test_tutorial_config.txt
+!tests/nightly/TestNotebook
+tests/nightly/tmp_notebook
+
+# pip building tools
+tools/pip_package/build
+tools/pip_package/dist
+tools/pip_package/mxnet.egg-info
+tools/pip_package/mxnet
+
+# temporary path for building dependencies when building wheel
+deps/
+staticdeps/
+tmp/
+build/
+lib/
+bin/
+model/
+
+# VTune
+./r0*hs
+
+# generated function signature for IDE auto-complete
+python/mxnet/symbol/gen_*
+python/mxnet/ndarray/gen_*
+python/.eggs
+
+# tests if built insource
+*CTestTestfile.cmake
+*DartConfiguration.tcl
+tests/Makefile
+tests/mxnet_unit_tests
+
+# Code coverage related
+.coverage
+*.gcov
+*.gcno
+coverage.xml
+
+# Local CMake build config
+cmake_options.yml

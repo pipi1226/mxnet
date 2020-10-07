@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 """Preprocessing script.
 
 This script walks over the directories and dump the frames into a csv file
@@ -10,6 +27,8 @@ import scipy
 import numpy as np
 import dicom
 from skimage import io, transform
+from joblib import Parallel, delayed
+import dill
 
 def mkdir(fname):
    try:
@@ -21,6 +40,8 @@ def get_frames(root_path):
    """Get path to all the frame in view SAX and contain complete frames"""
    ret = []
    for root, _, files in os.walk(root_path):
+       root=root.replace('\\','/')
+       files=[s for s in files if ".dcm" in s]
        if len(files) == 0 or not files[0].endswith(".dcm") or root.find("sax") == -1:
            continue
        prefix = files[0].rsplit('-', 1)[0]
@@ -46,36 +67,40 @@ def write_label_csv(fname, frames, label_map):
    fo = open(fname, "w")
    for lst in frames:
        index = int(lst[0].split("/")[3])
-       if label_map != None:
+       if label_map is not None:
            fo.write(label_map[index])
        else:
            fo.write("%d,0,0\n" % index)
    fo.close()
 
 
+def get_data(lst,preproc):
+   data = []
+   result = []
+   for path in lst:
+       f = dicom.read_file(path)
+       img = preproc(f.pixel_array.astype(float) / np.max(f.pixel_array))
+       dst_path = path.rsplit(".", 1)[0] + ".64x64.jpg"
+       scipy.misc.imsave(dst_path, img)
+       result.append(dst_path)
+       data.append(img)
+   data = np.array(data, dtype=np.uint8)
+   data = data.reshape(data.size)
+   data = np.array(data, dtype=np.str_)
+   data = data.reshape(data.size)
+   return [data,result]
+
+
 def write_data_csv(fname, frames, preproc):
    """Write data to csv file"""
    fdata = open(fname, "w")
-   dwriter = csv.writer(fdata)
-   counter = 0
-   result = []
-   for lst in frames:
-       data = []
-       for path in lst:
-           f = dicom.read_file(path)
-           img = preproc(f.pixel_array.astype(float) / np.max(f.pixel_array))
-           dst_path = path.rsplit(".", 1)[0] + ".64x64.jpg"
-           scipy.misc.imsave(dst_path, img)
-           result.append(dst_path)
-           data.append(img)
-       data = np.array(data, dtype=np.uint8)
-       data = data.reshape(data.size)
-       dwriter.writerow(data)
-       counter += 1
-       if counter % 100 == 0:
-           print("%d slices processed" % counter)
-   print("All finished, %d slices in total" % counter)
+   dr = Parallel()(delayed(get_data)(lst,preproc) for lst in frames)
+   data,result = zip(*dr)
+   for entry in data:
+      fdata.write(','.join(entry)+'\r\n')
+   print("All finished, %d slices in total" % len(data))
    fdata.close()
+   result = np.ravel(result)
    return result
 
 

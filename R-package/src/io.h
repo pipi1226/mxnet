@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file io.h
@@ -132,11 +151,14 @@ class ArrayDataIter : public DataIter {
   size_t counter_;
   /*! \brief number of pad instances*/
   size_t num_pad_;
+  /*! \brief number of data */
+  size_t num_data;
   /*! \brief The data list of each batch */
   std::vector<NDArray> data_;
   /*! \brief The data list of each batch */
   std::vector<NDArray> label_;
 };
+
 
 /*! \brief The DataIterCreate functions to be invoked */
 class DataIterCreateFunction : public ::Rcpp::CppFunction {
@@ -177,6 +199,8 @@ class DataIterCreateFunction : public ::Rcpp::CppFunction {
   // name of the function
   std::string name_;
 };
+
+
 }  // namespace R
 }  // namespace mxnet
 

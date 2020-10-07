@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file inst_vector.h
@@ -10,6 +29,7 @@
 
 #include <mxnet/io.h>
 #include <mxnet/base.h>
+#include <mxnet/tensor_blob.h>
 #include <dmlc/base.h>
 #include <mshadow/tensor.h>
 #include <vector>
@@ -20,7 +40,7 @@ namespace io {
 /*!
  * \brief a vector of tensor with various shape
  *
- * data are stored in memory continously
+ * data are stored in memory continuously
  */
 template<int dim, typename DType>
 class TensorVector {
@@ -67,6 +87,7 @@ class TensorVector {
 /*!
  * \brief a list of (label, example) pairs, examples can have various shape
  */
+template<typename DType = real_t>
 class InstVector {
  public:
   /*! \brief return the number of (label, example) pairs */
@@ -82,6 +103,10 @@ class InstVector {
   inline DataInst operator[](size_t i) const {
     DataInst inst;
     inst.index = index_[i];
+    // ImageRecordIter depends on data vector
+    // here having size 2. If you want to
+    // change this assumption here, change it
+    // in there as well (InitBatch section)!
     inst.data.push_back(TBlob(data_[i]));
     inst.data.push_back(TBlob(label_[i]));
     return inst;
@@ -107,7 +132,7 @@ class InstVector {
     label_.Push(lshape);
   }
   /*! \return the data content */
-  inline const TensorVector<3, real_t>& data() const {
+  inline const TensorVector<3, DType>& data() const {
     return data_;
   }
   /*! \return the label content */
@@ -119,7 +144,7 @@ class InstVector {
   /*! \brief index of the data */
   std::vector<unsigned> index_;
   // label
-  TensorVector<3, real_t> data_;
+  TensorVector<3, DType> data_;
   // data
   TensorVector<1, real_t> label_;
 };
@@ -149,9 +174,60 @@ struct TBlobBatch {
   }
   /*! \brief destructor */
   ~TBlobBatch() {
-    delete inst_index;
+    delete[] inst_index;
   }
 };  // struct TBlobBatch
+
+class TBlobContainer : public TBlob {
+ public:
+  TBlobContainer(void)
+    : TBlob(), tensor_container_(nullptr) {}
+  ~TBlobContainer() {
+    if (tensor_container_) {
+      release();
+    }
+  }
+  void resize(const mxnet::TShape &shape, int type_flag) {
+    if (tensor_container_) {
+      CHECK_EQ(this->type_flag_, type_flag);
+      this->shape_ = shape;
+      resize();
+    } else {
+      this->type_flag_ = type_flag;
+      this->shape_ = shape;
+      create();
+    }
+  }
+
+ private:
+  void create() {
+    CHECK(tensor_container_ == nullptr);
+    CHECK_EQ(this->dev_mask(), mshadow::cpu::kDevMask);
+    MSHADOW_TYPE_SWITCH(this->type_flag_, DType, {
+        auto tensor_container = new mshadow::TensorContainer<mshadow::cpu, 1, DType>(false);
+        tensor_container->Resize(mshadow::Shape1(shape_.Size()));
+        dptr_ = tensor_container->dptr_;
+        tensor_container_ = tensor_container;
+    });
+  }
+  void resize() {
+    MSHADOW_TYPE_SWITCH(this->type_flag_, DType, {
+        auto tensor_container =
+          (mshadow::TensorContainer<mshadow::cpu, 1, DType>*) tensor_container_;
+        tensor_container->Resize(mshadow::Shape1(shape_.Size()));
+    });
+  }
+  void release() {
+    MSHADOW_TYPE_SWITCH(this->type_flag_, DType, {
+        auto tensor_container =
+          (mshadow::TensorContainer<mshadow::cpu, 1, DType>*) tensor_container_;
+        delete tensor_container;
+    });
+  }
+
+  void* tensor_container_;
+};
+
 }  // namespace io
 }  // namespace mxnet
 #endif  // MXNET_IO_INST_VECTOR_H_

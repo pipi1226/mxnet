@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 # pylint: skip-file
 import sys, os
 import argparse
@@ -11,9 +28,10 @@ from solver import Solver
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-ctx = mx.gpu(0)
+
 
 def main():
+    ctx = mx.cpu() if not args.gpu else mx.gpu(args.gpu)
     fcnxs = symbol_fcnxs.get_fcn32s_symbol(numclass=21, workspace_default=1536)
     fcnxs_model_prefix = "model_pascal/FCN32s_VGG16"
     if args.model == "fcn16s":
@@ -68,6 +86,7 @@ if __name__ == "__main__":
         help='the init type of fcn-xs model, e.g. vgg16, fcnxs')
     parser.add_argument('--retrain', action='store_true', default=False,
         help='true means continue training.')
+    parser.add_argument("--gpu", type=int, help="0 to use GPU, not set to use CPU")
     args = parser.parse_args()
     logging.info(args)
     main()

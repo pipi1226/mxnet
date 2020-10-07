@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file export.cc
@@ -41,7 +60,7 @@ Exporter* Exporter::Get() {
 void Exporter::InitRcppModule() {
   using namespace Rcpp;  // NOLINT(*)
   Exporter::Get()->scope_ = ::getCurrentScope();
-  function("mxnet.internal.export", &Exporter::Export,
+  function("mx.internal.export", &Exporter::Export,
            Rcpp::List::create(_["path"]),
            "Internal function of mxnet, used to export generated functions file.");
 }
@@ -93,6 +112,10 @@ void Exporter::Export(const std::string& path) {
     std::string fname = Rcpp::as<std::string>(func_names[i]);
     // skip internal functions
     if (fname.find("internal.") != std::string::npos) continue;
+    if (fname == "mx.varg.symbol.Concat"
+      || fname == "mx.varg.symbol.concat"
+      || fname == "mx.varg.symbol.min_axis"
+      || fname == "mx.varg.symbol.min") continue;
     Rcpp::List func_info(scope->get_function(fname));
     std::string docstr = Rcpp::as<std::string>(func_info[2]);
     if (docstr.find("@export") == std::string::npos) continue;

@@ -1,3 +1,20 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
 #' Load an mx.nd.array object on disk
 #'
 #' @param filename the filename (including the path)
@@ -145,7 +162,11 @@ is.mx.ndarray <- function(src.array) {
 #' @param e1 The second operand
 #' @export
 Ops.MXNDArray <- function(e1, e2) {
-  mx.nd.internal.dispatch.Ops(.Generic, e1, e2)
+  if (missing(e2)) {
+    mx.nd.internal.dispatch.Ops(.Generic, 0, e1)
+  } else {
+    mx.nd.internal.dispatch.Ops(.Generic, e1, e2)
+  }
 }
 
 #' Dimension operator overload of mx.ndarray
@@ -176,7 +197,7 @@ as.matrix.MXNDArray <- function(nd) {
   if (length(dim(nd)) != 2) {
     stop("The input argument is not two dimensional matrix.")
   }
-  as.matrix(as.array(x))
+  as.matrix(as.array(nd))
 }
 
 #' print operator overload of mx.ndarray

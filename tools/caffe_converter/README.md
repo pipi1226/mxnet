@@ -1,21 +1,30 @@
+<!--- Licensed to the Apache Software Foundation (ASF) under one -->
+<!--- or more contributor license agreements.  See the NOTICE file -->
+<!--- distributed with this work for additional information -->
+<!--- regarding copyright ownership.  The ASF licenses this file -->
+<!--- to you under the Apache License, Version 2.0 (the -->
+<!--- "License"); you may not use this file except in compliance -->
+<!--- with the License.  You may obtain a copy of the License at -->
+
+<!---   http://www.apache.org/licenses/LICENSE-2.0 -->
+
+<!--- Unless required by applicable law or agreed to in writing, -->
+<!--- software distributed under the License is distributed on an -->
+<!--- "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY -->
+<!--- KIND, either express or implied.  See the License for the -->
+<!--- specific language governing permissions and limitations -->
+<!--- under the License. -->
+
 # Convert Caffe Model to Mxnet Format
 
-### Build
+This folder contains the source codes for this tool.
 
-Either [Caffe's python package](http://caffe.berkeleyvision.org/installation.html) or [Google protobuf](https://developers.google.com/protocol-buffers/?hl=en) is required. The latter is often much easier to install:  
+If Caffe with python binding is installed, we can use the following command to
+convert a Resnet-50 pretrained model.
 
-1. We first install the protobuf compiler. If you compiled mxnet with `USE_DIST_KVSTORE = 1` then it is already built. Otherwise, install `protobuf-compiler` by your favor package manager, e.g. `sudo apt-get install protobuf-compiler` for ubuntu and `sudo yum install protobuf-compiler` for redhat/fedora. 
+```bash
+python convert_caffe_modelzoo.py resnet-50
+```
 
-2. Then install the protobuf's python binding. For example `sudo pip install protobuf`
-
-Now we can build the tool by running `make` in the current directory.
-
-### How to use
-
-Use `./run.sh model_name` to download and convert a model. E.g. `./run.sh vgg19`
-
-### Note
-
-* We have verified the results of VGG_16/VGG_19 model and BVLC_googlenet results from Caffe model zoo.
-* The tool only supports single input and single output network.
-* The tool can only work with the L2LayerParameter in Caffe.
+Please refer to
+[docs/faq/caffe.md](../../docs/faq/caffe.md) for more details.

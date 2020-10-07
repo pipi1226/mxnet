@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 /*!
  *  Copyright (c) 2015 by Contributors
  * \file kvstore.cc
@@ -112,33 +131,51 @@ void KVStore::SetOptimizer(const Rcpp::List& optimizer) {
                               this));
 }
 
-NDArray KVStore::CreateState(int index, const NDArray& weight) const {
+Rcpp::List KVStore::CreateState(int index, const NDArray& weight) const {
   RCHECK(optimizer_set_)
       << "Need to call set.optimizer for KVStore " << type();
-  // TODO(KK) review this
   // Use R Internal API here
   Rcpp::Shield<SEXP> call(Rf_lang3(fcreate_state_, Rcpp::wrap(index), weight.RObject()));
-  return NDArray(Rcpp_eval(call));
+  SEXP ret = Rcpp_eval(call);
+  if (Rf_isNull(ret)) {
+    return Rcpp::List::create();
+  } else if (TYPEOF(ret) == EXTPTRSXP) {
+    return Rcpp::List::create(Rcpp::Named("state") = ret);
+  } else {
+    return ret;
+  }
 }
 
 void KVStore::Update(int index, const NDArray& grad, NDArray *weight) {
   RCHECK(optimizer_set_)
       << "Need to call set.optimizer for KVStore " << type();
-  std::map<int, NDArray>::iterator it = states_.find(index);
+  std::map<int, Rcpp::List>::iterator it = states_.find(index);
+  Rcpp::List state_lst = this->CreateState(index, *weight);
   if (it == states_.end()) {
-    NDArray nd = this->CreateState(index, *weight);
-    states_.insert(std::make_pair(index, nd));
-    it = states_.find(index);
+    if (state_lst.size() != 0) {
+      states_.insert(std::make_pair(index, state_lst));
+      it = states_.find(index);
+    }
   }
-  NDArray& state = it->second;
-  // TODO(KK) review this
-  // Use R Internal API here
-  Rcpp::Shield<SEXP> call(Rf_lang5(fupdate_, Rcpp::wrap(index),
-                                   weight->RObject(), grad.RObject(),
-                                   state.RObject()));
-  Rcpp::List rlist(Rcpp_eval(call));
-  // update the state, and eight
-  state = rlist["state"];
+
+  Rcpp::List rlist;
+  if (state_lst.size() == 0) {
+    Rcpp::Shield<SEXP> call(Rf_lang5(fupdate_, Rcpp::wrap(index),
+                                     weight->RObject(), grad.RObject(),
+                                     R_NilValue));
+    rlist = Rcpp_eval(call);
+  } else if (state_lst.size() == 1) {
+    Rcpp::Shield<SEXP> call(Rf_lang5(fupdate_, Rcpp::wrap(index),
+                                     weight->RObject(), grad.RObject(),
+                                     it->second[0]));
+    rlist = Rcpp_eval(call);
+  } else {
+    // Use R Internal API here
+    Rcpp::Shield<SEXP> call(Rf_lang5(fupdate_, Rcpp::wrap(index),
+                                     weight->RObject(), grad.RObject(),
+                                     it->second));
+    rlist = Rcpp_eval(call);
+  }
   NDArray::CopyFromTo(NDArray::FromRObject(rlist["weight"]), weight);
 }
 
